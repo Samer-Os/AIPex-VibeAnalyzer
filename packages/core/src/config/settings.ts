@@ -40,11 +40,11 @@ export interface AppSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  aiProvider: "openai",
+  aiProvider: "google",
   language: "en",
   theme: "system",
-  providerType: "openai",
-  providerEnabled: false,
+  providerType: "google",
+  providerEnabled: true,
   defaultModel: undefined,
   customModels: [],
 };

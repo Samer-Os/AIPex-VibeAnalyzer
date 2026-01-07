@@ -49,6 +49,7 @@ export const AI_PROVIDERS = {
       "gemini-2.5-flash-exp",
       "gemini-1.5-pro",
       "gemini-1.5-flash",
+      "gemini-2.5-flash-lite",
     ] as const,
     tokenPlaceholder: "AIza...",
     docs: "https://aistudio.google.com/app/apikey",
