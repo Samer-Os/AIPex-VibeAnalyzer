@@ -3,10 +3,20 @@
  * Handles extension lifecycle events and keyboard commands
  */
 
-// Open side panel when extension icon is clicked
+// Enable opening side panel on action click (Chrome 116+)
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.sidePanel
+    .setPanelBehavior({ openPanelOnActionClick: true })
+    .catch((error) => console.error("Failed to set panel behavior:", error));
+});
+
+// Open side panel when extension icon is clicked (Fallout/Legacy)
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id) {
-    chrome.sidePanel.open({ tabId: tab.id });
+    chrome.sidePanel.open({ tabId: tab.id }).catch((e) => {
+      // Ignore errors if panel is already open or handled by setPanelBehavior
+      console.debug("Side panel open error:", e);
+    });
   }
 });
 

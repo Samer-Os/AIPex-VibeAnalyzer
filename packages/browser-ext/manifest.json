@@ -65,6 +65,7 @@
     "sidePanel",
     "management",
     "downloads",
-    "tabCapture"
+    "tabCapture",
+    "debugger"
   ]
 }

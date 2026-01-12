@@ -109,6 +109,7 @@
     }
   },
   "scripts": {
+    "build": "tsc --build",
     "typecheck": "tsc --project tsconfig.json",
     "test": "vitest run",
     "prepublishOnly": "npm run build"

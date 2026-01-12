@@ -1,6 +1,6 @@
 import { tool } from "@aipexstudio/aipex-core";
 import { z } from "zod";
-import { executeScriptInActiveTab, getActiveTab } from "./index";
+import { executeScriptInActiveTab, getActiveTab } from "./utils";
 
 /**
  * Get information about the current active page
@@ -129,20 +129,65 @@ export const getPageContentTool = tool({
       .describe("CSS selector to get content from (default: body)"),
   }),
   execute: async ({ selector = "body" }: { selector?: string | null }) => {
-    const resolvedSelector = selector ?? "body";
-    const content = await executeScriptInActiveTab(
+    // Helper function to extract content with better heuristics
+    const extractionResult = await executeScriptInActiveTab(
       (sel: string) => {
-        const element = document.querySelector(sel);
-        return element ? element.textContent : null;
+        let element: Element | null = null;
+        let usedSelector = sel;
+
+        // If generic selector, try heuristics for main content
+        if (!sel || sel === "body") {
+          const candidates = [
+            "article",
+            "main",
+            '[role="main"]',
+            "#content", // Wikipedia/MediaWiki
+            "#main",
+            ".main-content",
+            "body",
+          ];
+
+          for (const candidate of candidates) {
+            const found = document.querySelector(candidate);
+            if (found) {
+              element = found;
+              usedSelector = candidate;
+              break;
+            }
+          }
+        } else {
+          element = document.querySelector(sel);
+        }
+
+        if (!element) return null;
+
+        // innerText is generally better than textContent as it respects styling (hidden elements)
+        // and preserves some formatting (newlines)
+        const content =
+          (element as HTMLElement).innerText || element.textContent;
+        return { content, usedSelector };
       },
-      [resolvedSelector],
+      [selector ?? "body"],
     );
 
-    if (!content) {
-      throw new Error(`No content found for selector: ${resolvedSelector}`);
+    if (!extractionResult?.content) {
+      throw new Error(`No content found for selector: ${selector}`);
     }
 
-    return { content, selector: resolvedSelector };
+    const { content, usedSelector } = extractionResult;
+    const maxLength = 25000; // Limit to 25k chars (~5k tokens) to ensure model responsiveness
+    const isTruncated = content.length > maxLength;
+    const finalContent = isTruncated
+      ? content.slice(0, maxLength) +
+        "\n\n[SYSTEM NOTE: Content truncated. Please summarize the text above.]"
+      : content;
+
+    return {
+      content: finalContent,
+      selector: usedSelector,
+      isTruncated,
+      totalLength: content.length,
+    };
   },
 });
 

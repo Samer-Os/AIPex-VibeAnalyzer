@@ -58,7 +58,7 @@ export function DefaultInputArea({
 }: ExtendedInputAreaProps) {
   const { t } = useTranslation();
   const { slots } = useComponentsContext();
-  const { settings } = useConfigContext();
+  const { settings, updateSetting, updateSettings } = useConfigContext();
 
   const effectivePlaceholder = placeholder ?? t("input.placeholder1");
 
@@ -131,11 +131,32 @@ export function DefaultInputArea({
     [onSubmit],
   );
 
-  const handleModelChange = useCallback((newModel: string) => {
-    const trimmed = newModel?.trim();
-    if (!trimmed) return;
-    setSelectedModel(trimmed);
-  }, []);
+  const handleModelChange = useCallback(
+    (newModel: string) => {
+      const trimmed = newModel?.trim();
+      if (!trimmed) return;
+      setSelectedModel(trimmed);
+
+      // Check if it's a custom model and update configuration accordingly
+      const customModel = settings.customModels?.find(
+        (m) => m.aiModel === trimmed,
+      );
+      if (customModel) {
+        let providerKey = customModel.providerType as string;
+        if (providerKey === "claude") providerKey = "anthropic";
+
+        void updateSettings({
+          aiModel: trimmed,
+          aiProvider: providerKey as any,
+          aiToken: customModel.aiToken,
+          aiHost: customModel.aiHost || "",
+        });
+      } else {
+        void updateSetting("aiModel", trimmed);
+      }
+    },
+    [updateSetting, updateSettings, settings.customModels],
+  );
 
   // Map status to ChatStatus type
   const submitStatus: ChatStatus | undefined =

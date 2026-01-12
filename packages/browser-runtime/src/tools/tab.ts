@@ -1,6 +1,6 @@
 import { tool } from "@aipexstudio/aipex-core";
 import { z } from "zod";
-import { getActiveTab } from "./index";
+import { getActiveTab } from "./utils";
 
 /**
  * List all open tabs

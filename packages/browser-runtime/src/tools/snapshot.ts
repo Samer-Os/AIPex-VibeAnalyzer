@@ -1,7 +1,7 @@
 import { tool } from "@aipexstudio/aipex-core";
 import { z } from "zod";
 import { snapshotManager } from "../automation";
-import { getActiveTab } from "./index";
+import { getActiveTab } from "./utils";
 
 export const takeSnapshotTool = tool({
   name: "take_snapshot",

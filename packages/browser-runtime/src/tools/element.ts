@@ -5,7 +5,7 @@ import {
   SmartElementHandle,
   snapshotManager,
 } from "../automation";
-import { getActiveTab } from "./index";
+import { getActiveTab } from "./utils";
 
 async function getElementByUid(
   tabId: number,

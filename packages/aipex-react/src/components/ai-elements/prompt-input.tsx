@@ -343,23 +343,37 @@ export function PromptInputContextTag({
 }: PromptInputContextTagProps) {
   const contexts = usePromptInputContexts();
 
+  const isCommand = data.value.startsWith("/");
+
   return (
     <div
       className={cn(
-        "group inline-flex items-center gap-1.5 px-2 py-1 text-sm rounded-md",
-        "bg-muted/50 hover:bg-muted transition-colors",
-        "border border-border",
+        "group inline-flex items-center px-2 py-1 text-sm rounded-md",
+        isCommand ? "gap-0" : "gap-1.5",
+        isCommand
+          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800"
+          : "bg-muted/50 hover:bg-muted text-foreground border-border",
+        "border transition-colors",
         className,
       )}
       {...props}
     >
-      <span className="text-muted-foreground">
+      <span
+        className={cn(
+          isCommand
+            ? "text-blue-600 dark:text-blue-400"
+            : "text-muted-foreground",
+        )}
+      >
         {data.icon || CONTEXT_ICONS[data.type]}
       </span>
-      <span className="max-w-[200px] truncate">{data.label}</span>
+      <span className="max-w-[200px] truncate font-medium">{data.label}</span>
       <Button
         aria-label="Remove context"
-        className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        className={cn(
+          "h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity",
+          isCommand && "ml-1.5",
+        )}
         onClick={() => contexts.remove(data.id)}
         size="icon"
         type="button"
@@ -787,6 +801,13 @@ export const PromptInputTextarea = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [atPosition, setAtPosition] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  // Slash commands state
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [slashAtPosition, setSlashAtPosition] = useState<number | null>(null);
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [menuPosition, setMenuPosition] = useState({
     bottom: 0,
@@ -856,6 +877,44 @@ export const PromptInputTextarea = ({
       }
     }
 
+    // Handle slash menu navigation
+    if (showSlashMenu && filteredSlashCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashSelectedIndex(
+          (prev) => (prev + 1) % filteredSlashCommands.length,
+        );
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashSelectedIndex(
+          (prev) =>
+            (prev - 1 + filteredSlashCommands.length) %
+            filteredSlashCommands.length,
+        );
+        return;
+      }
+
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const selectedCmd = filteredSlashCommands[slashSelectedIndex];
+        if (selectedCmd) {
+          handleSlashSelect(selectedCmd);
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowSlashMenu(false);
+        setSlashQuery("");
+        setSlashAtPosition(null);
+        return;
+      }
+    }
+
     // Normal textarea behavior
     if (e.key === "Enter") {
       // Don't submit if IME composition is in progress
@@ -917,6 +976,70 @@ export const PromptInputTextarea = ({
     [atPosition, contexts, props.value, onChange],
   );
 
+  const SLASH_COMMANDS = [
+    {
+      label: "Analyse",
+      value: "/analyse",
+      contextValue:
+        "User Intent: Analyze current page. ACTION REQUIRED: You MUST use 'get_page_content' tool immediately to read the page.",
+      description: "Analyze the content",
+    },
+  ];
+
+  const filteredSlashCommands = useMemo(() => {
+    if (!slashQuery) return SLASH_COMMANDS;
+    const query = slashQuery.toLowerCase();
+    return SLASH_COMMANDS.filter(
+      (cmd) =>
+        cmd.value.toLowerCase().includes(query) ||
+        cmd.label.toLowerCase().includes(query),
+    );
+  }, [slashQuery]);
+
+  const handleSlashSelect = useCallback(
+    (command: (typeof SLASH_COMMANDS)[0]) => {
+      if (!textareaRef.current || slashAtPosition === null) return;
+
+      const currentValue = String(props.value || "");
+      const beforeSlash = currentValue.slice(0, slashAtPosition);
+      const afterSearch = currentValue.slice(
+        textareaRef.current.selectionStart,
+      );
+      // Remove the slash command text from the input entirely
+      const newValue = beforeSlash + afterSearch;
+
+      const syntheticEvent = {
+        target: { value: newValue },
+        currentTarget: { value: newValue },
+      } as ChangeEvent<HTMLTextAreaElement>;
+      onChange?.(syntheticEvent);
+
+      // Add as a context item (pill)
+      contexts.add({
+        id: nanoid(),
+        type: "custom",
+        label: command.label,
+        value: command.contextValue || command.value,
+        icon: <span className="font-bold text-xs">/</span>,
+      });
+
+      setShowSlashMenu(false);
+      setSlashQuery("");
+      setSlashAtPosition(null);
+
+      // Refocus
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const newCursorPos = beforeSlash.length;
+          textareaRef.current.selectionStart = newCursorPos;
+          textareaRef.current.selectionEnd = newCursorPos;
+        }
+      }, 0);
+    },
+    [slashAtPosition, props.value, onChange, contexts],
+  );
+
   const handlePaste: ClipboardEventHandler<HTMLTextAreaElement> = (event) => {
     const items = event.clipboardData?.items;
 
@@ -958,10 +1081,25 @@ export const PromptInputTextarea = ({
       setAtPosition(beforeCursor.lastIndexOf("@"));
       setSearchQuery(query);
       setShowContextMenu(true);
+      setShowSlashMenu(false); // Close slash menu if @ is triggered
     } else {
       setShowContextMenu(false);
       setSearchQuery("");
       setAtPosition(null);
+
+      // Check for slash command if not in @ context
+      const slashMatch = beforeCursor.match(/\/([^\s]*)$/);
+      const slashQ = slashMatch?.[1];
+
+      if (slashQ !== undefined) {
+        setSlashAtPosition(beforeCursor.lastIndexOf("/"));
+        setSlashQuery(slashQ);
+        setShowSlashMenu(true);
+      } else {
+        setShowSlashMenu(false);
+        setSlashQuery("");
+        setSlashAtPosition(null);
+      }
     }
 
     onChange?.(e);
@@ -1033,7 +1171,7 @@ export const PromptInputTextarea = ({
   // Calculate menu position when showing context menu
   useEffect(() => {
     const updatePosition = () => {
-      if (showContextMenu && textareaRef.current) {
+      if ((showContextMenu || showSlashMenu) && textareaRef.current) {
         const rect = textareaRef.current.getBoundingClientRect();
         const windowHeight = window.innerHeight;
         setMenuPosition({
@@ -1047,7 +1185,7 @@ export const PromptInputTextarea = ({
     updatePosition();
 
     // Update position on scroll and resize
-    if (!showContextMenu) {
+    if (!showContextMenu && !showSlashMenu) {
       return;
     }
 
@@ -1058,7 +1196,7 @@ export const PromptInputTextarea = ({
       window.removeEventListener("scroll", updatePosition, true);
       window.removeEventListener("resize", updatePosition);
     };
-  }, [showContextMenu]);
+  }, [showContextMenu, showSlashMenu]);
 
   return (
     <div className="relative">
@@ -1139,6 +1277,82 @@ export const PromptInputTextarea = ({
                       </span>
                     </button>
                   ))}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Slash Command Menu - Portal Implementation */}
+      {showSlashMenu &&
+        filteredSlashCommands.length > 0 &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed z-[9999] animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2"
+            style={{
+              bottom: `${menuPosition.bottom}px`,
+              left: `${menuPosition.left}px`,
+              width: `${menuPosition.width}px`,
+            }}
+          >
+            <div className="bg-popover border rounded-lg shadow-xl max-h-[400px] overflow-hidden mb-2">
+              {/* Commands List */}
+              <div className="max-h-[350px] overflow-y-auto">
+                {filteredSlashCommands.map((cmd, index) => (
+                  <button
+                    key={cmd.value}
+                    type="button"
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors text-left min-w-0 border-b last:border-b-0",
+                      index === slashSelectedIndex
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/50",
+                    )}
+                    onClick={() => handleSlashSelect(cmd)}
+                    onMouseEnter={() => setSlashSelectedIndex(index)}
+                  >
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <span className="truncate font-medium">
+                        {(() => {
+                          const query = slashQuery?.toLowerCase() || "";
+                          const val = cmd.value;
+                          const valLower = val.toLowerCase();
+                          const idx = valLower.indexOf(query);
+
+                          if (!query || idx === -1) {
+                            return (
+                              <span className="text-muted-foreground">
+                                {val}
+                              </span>
+                            );
+                          }
+
+                          const before = val.slice(0, idx);
+                          const match = val.slice(idx, idx + query.length);
+                          const after = val.slice(idx + query.length);
+
+                          return (
+                            <>
+                              <span className="text-muted-foreground">
+                                {before}
+                              </span>
+                              <span className="text-blue-500 dark:text-blue-400 font-bold">
+                                {match}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {after}
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {cmd.description}
+                      </span>
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
           </div>,
